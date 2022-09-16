@@ -1,0 +1,554 @@
+apiVersion: config.kubernetes.io/v1
+kind: ResourceList
+items:
+- apiVersion: kpt.dev/v1
+  kind: Kptfile
+  metadata:
+    name: firewall-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'cfw/Kptfile'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'cfw/Kptfile'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  info:
+    description: firewall-host-netdevice
+  pipeline:
+    mutators:
+    - image: gcr.io/kpt-fn/set-namespace:v0.4.1
+      configPath: ns.yaml
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: firewall-host-netdevice-scripts-configmap
+    labels:
+      release: firewall-host-netdevice
+      app: firewall-host-netdevice
+      chart: firewall-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'cfw/configmap.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'cfw/configmap.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  data:
+    init-veths.sh: |
+      #!/bin/bash
+
+      apt-get update
+      apt-get install -y sudo curl net-tools iproute2
+
+      sudo ip link add name veth11 type veth peer name veth12
+      sudo ip link add name veth21 type veth peer name veth22
+
+      echo "done"
+      sleep infinity
+    vfw_start.sh: "#!/bin/bash\n\n#update root ca (wr lab only)\n#apt-get update\n\n# echo 'Updte CA Cert'\n# mkdir -p /usr/local/share/ca-certificates/extra\n# cp /opt/rootCA.crt /usr/local/share/ca-certificates/extra/\n# update-ca-certificates\n# apt install -y libnss3-tools\n# cp /opt/ImportScript /root\n# chmod a+x /root/ImportScript\n# /root/ImportScript\n\napt-get update\napt-get install -y sudo curl net-tools iproute2 inetutils-ping vim\n#curl -s https://packagecloud.io/install/repositories/fdio/release/script.deb.sh | sudo bash\n#curl -k -s https://packagecloud.io/install/repositories/fdio/1901/script.deb.sh | sudo bash\n\napt-get install -y gnupg\ncurl -k -L https://packagecloud.io/fdio/1901/gpgkey | sudo apt-key add -\n\ncat <<EOF > /etc/apt/sources.list.d/fdio_1901.list\ndeb https://packagecloud.io/fdio/1901/ubuntu/ bionic main\ndeb-src https://packagecloud.io/fdio/1901/ubuntu/ bionic main\nEOF\n\napt-get update\n\n#export VPP_VER=19.01.2-release\nexport VPP_VER=19.01.3-rc0~9-gbef25c30a~b79\napt-get install -y vpp=$VPP_VER vpp-lib=$VPP_VER\napt-get install -y vpp-plugins=$VPP_VER\n\nif [ -e /run/vpp/cli-vpp2.sock ]; then\n    rm /run/vpp/cli-vpp2.sock\nfi\n\napt-get install -y python3\n\npython3 /opt/vfwstarter.py\n\n# # extract core list\n# #\troot@vpktgen:/# taskset -p --cpu-list 1\n# #\tpid 1's current affinity list: 1,2,29\n\n# corelist=`taskset -p -c 1 |cut -d : -f 2 | sed 's/^ *//' | sed 's/ *$//'`\n# # #extract master core\n# # mastercoreidx=`echo $corelist | cut -d , -f 1`\n# # #extract worker cores\n# # workercorelist=`echo $corelist | sed -E 's/^[0-9]*,//'`\n# # delimiter=,\n# # delimiter2=-\n# # s=$corelist$delimiter \n# # list1=();\n# # while [[ $s ]]; do\n# #     element1=( \"${s%%\"$delimiter\"*}\" );\n# #     s=${s#*\"$delimiter\"};\n# #     s2=$element1$delimiter2\n# #     while [[ $s2 ]]; do\n# #         list1+=( \"${s2%%\"$delimiter2\"*}\" );\n# #         s2=${s2#*\"$delimiter2\"};\n# #     done;\n# # done;\n\n# delimiter=,\n# s=$corelist$delimiter \n# list1=();\n# while [[ $s ]]; do\n#     element1=( \"${s%%\"$delimiter\"*}\" );\n#     s=${s#*\"$delimiter\"};\n#     s2=`echo $element1 | sed -E 's/-/\\.\\./'`\n#     echo $(echo \"{\"$s2\"}\")\n#     for i in $(echo \"{\"$s2\"}\"); do\n#         list1+=$i;\n#     done;\n# done;\n# declare -p list1\n\n# echo 'start... vpp'\n# vpp unix {cli-listen /run/vpp/cli-vpp2.sock} api-segment { prefix vpp2 } \\\n#     cpu { main-core $mastercoreidx  corelist-workers $workercorelist }\n\n# echo 'wait vpp be up ...'\n# while [ ! -e /run/vpp/cli-vpp2.sock ]; do\n#     sleep 1;\n# done\n\n# echo 'configure vpp ...'\n\n# ifconfig veth12 0.0.0.0\n# ifconfig veth12 down\n# ifconfig veth21 0.0.0.0\n# ifconfig veth21 down\n\n# HWADDR1=$(ifconfig veth12 |grep ether | tr -s ' ' | cut -d' ' -f 3)\n# HWADDR2=$(ifconfig veth21 |grep ether | tr -s ' ' | cut -d' ' -f 3)\n\n# vppctl -s /run/vpp/cli-vpp2.sock show ver\n# vppctl -s /run/vpp/cli-vpp2.sock show threads\n\n# vppctl -s /run/vpp/cli-vpp2.sock create host-interface name veth12 hw-addr $HWADDR1\n\n# vppctl -s /run/vpp/cli-vpp2.sock set int state host-veth12 up\n\n# vppctl -s /run/vpp/cli-vpp2.sock set int ip address host-veth12 10.10.1.1/24\n\n# vppctl -s /run/vpp/cli-vpp2.sock create host-interface name veth21 hw-addr $HWADDR2\n\n# vppctl -s /run/vpp/cli-vpp2.sock set int state host-veth21 up\n\n# vppctl -s /run/vpp/cli-vpp2.sock set int ip address host-veth21 10.10.2.1/24\n\n# vppctl -s /run/vpp/cli-vpp2.sock show hardware\n# vppctl -s /run/vpp/cli-vpp2.sock show int\n# vppctl -s /run/vpp/cli-vpp2.sock show int addr\n\n# vppctl -s /run/vpp/cli-vpp2.sock show ip fib\n\n# #vppctl -s /run/vpp/cli-vpp2.sock trace add af-packet-input 10\n\n# #vppctl -s /run/vpp/cli-vpp2.sock ping 10.10.1.2\n\n# #vppctl -s /run/vpp/cli-vpp2.sock show trace\n# #vppctl -s /run/vpp/cli-vpp2.sock show ip arp\n\necho \"done\"\nsleep infinity\n"
+    vfwstarter.py: "#!/usr/bin/python\r\n\r\nimport os\r\nimport subprocess\r\nfrom time import sleep\r\nimport time\r\n\r\ndef start_vpp(master_core, worker_cores):\r\n    print(\"start vpp, master %s, worker_cores: %s\" % (master_core,worker_cores))\r\n    subprocess.check_call(\r\n        \"vpp unix {cli-listen /run/vpp/cli-vpp2.sock} api-segment { prefix vpp2 } \\\r\n            cpu { main-core %s  corelist-workers %s }\" % (master_core, worker_cores), \r\n            shell=True)\r\n    while not os.path.exists(\"/run/vpp/cli-vpp2.sock\"):\r\n        print(\"waiting for vpp up ...\")\r\n        time.sleep(1)\r\n        pass\r\n    print(\"configure vpp ...\")\r\n\r\n    subprocess.check_call(\"ifconfig veth12 0.0.0.0\", shell=True)\r\n    subprocess.check_call(\"ifconfig veth12 down\", shell=True)\r\n    subprocess.check_call(\"ifconfig veth21 0.0.0.0\", shell=True)\r\n    subprocess.check_call(\"ifconfig veth21 down\", shell=True)\r\n\r\n    status1, HWADDR1= subprocess.getstatusoutput(\"ifconfig veth12 |grep ether | tr -s ' ' | cut -d' ' -f 3\")\r\n    status2, HWADDR2= subprocess.getstatusoutput(\"ifconfig veth21 |grep ether | tr -s ' ' | cut -d' ' -f 3\")\r\n    if status1 != 0 or status2 != 0:\r\n        print(\"Failed to get HW Addr\")\r\n        exit(-1)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock show ver\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock show threads\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock create host-interface name veth12 hw-addr %s\"%HWADDR1, shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock set int state host-veth12 up\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock set int ip address host-veth12 10.10.1.1/24\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock create host-interface name veth21 hw-addr %s\"%HWADDR2, shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock set int state host-veth21 up\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock set int ip address host-veth21 10.10.2.1/24\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock show hardware\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock show int\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock show int addr\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp2.sock show ip fib\", shell=True)\r\n\r\ndef extract_master_worker_cores():\r\n    status, coreliststr = subprocess.getstatusoutput(\r\n        \"taskset -p -c 1 |cut -d : -f 2 | sed 's/^ *//' | sed 's/ *$//'\")\r\n    print(\"coreliststr: %s\" % coreliststr)\r\n    corelist = cpu_list_decoder(coreliststr)\r\n    master_core = corelist[0] if len(corelist) > 0 else -1\r\n    worker_cores = corelist[1:] if len(corelist) > 1 else []\r\n    return master_core, worker_cores\r\n\r\ndef cpu_list_decoder(cpuliststr):\r\n    print(\"cpu list:\"+cpuliststr)\r\n    result = []\r\n    if cpuliststr == \"\":\r\n        return []\r\n    # split by ,\r\n    toplist = cpuliststr.split(',')\r\n    for ele in toplist:\r\n        if '-' not in ele:\r\n            result.append(int(ele))\r\n            continue\r\n\r\n        secondlist = ele.split('-')\r\n        start = int(secondlist[0])\r\n        end = int(secondlist[1])\r\n        while start <= end:\r\n            result.append(start)\r\n            start += 1\r\n    print(\"decoded: \"+ str(result))\r\n    return result\r\n\r\nmaster_core, worker_cores = extract_master_worker_cores()\r\nstart_vpp(master_core, worker_cores)\r\n\r\n# if __name__ == \"__main__\":\r\n#     print ('This is main of module \"cpu-list-decoder.py\"')\r\n#     cpu_list_decoder(\"3-5\")\r\n#     cpu_list_decoder(\"2,5-9\")\r\n#     cpu_list_decoder(\"2-4,4-8,11\")\r\n"
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: firewall-host-netdevice
+    labels:
+      release: firewall-host-netdevice
+      app: firewall-host-netdevice
+      chart: firewall-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'cfw/deployment.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'cfw/deployment.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: firewall-host-netdevice
+        release: firewall-host-netdevice
+    template:
+      metadata:
+        labels:
+          app: firewall-host-netdevice
+          release: firewall-host-netdevice
+        annotations:
+          k8s.v1.cni.cncf.io/networks: '[ { "name": "host-device-veth12", "interface": "veth12" }, { "name": "host-device-veth21", "interface": "veth21" } ]'
+      spec:
+        nodeSelector:
+          kubernetes.io/hostname: "controller-0"
+        containers:
+        - name: firewall-host-netdevice
+          image: ubuntu:18.04
+          imagePullPolicy: IfNotPresent
+          tty: true
+          stdin: true
+          env:
+          - name: unprotectedNetCidr
+            value: "10.10.1.0/24"
+          - name: unprotectedNetGwIp
+            value: "10.10.1.1"
+          - name: protectedNetCidr
+            value: "10.10.2.0/24"
+          - name: protectedNetGwIp
+            value: "10.10.2.1"
+          - name: dcaeCollectorIp
+            value: "10.12.7.4"
+          - name: dcaeCollectorPort
+            value: "30235"
+          command: ["/bin/bash", "/opt/vfw_start.sh"]
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+              - CAP_SYS_ADMIN
+          volumeMounts:
+          - mountPath: /hugepages
+            name: hugepage
+          - name: lib-modules
+            mountPath: /lib/modules
+          - name: src
+            mountPath: /usr/src
+          - name: scripts
+            mountPath: /opt
+          resources:
+            requests:
+              cpu: 3
+              memory: 4Gi
+              hugepages-2Mi: 256Mi
+            limits:
+              cpu: 3
+              memory: 4Gi
+              hugepages-2Mi: 256Mi
+        volumes:
+        - name: hugepage
+          emptyDir:
+            medium: HugePages
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: src
+          hostPath:
+            path: /usr/src
+        - name: scripts
+          configMap:
+            name: firewall-host-netdevice-scripts-configmap
+        imagePullSecrets:
+        - name: admin-registry-secret
+- apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: example
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'cfw/namespace.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'cfw/namespace.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+- apiVersion: v1
+  kind: ConfigMap
+  metadata: # kpt-merge: /kptfile.kpt.dev
+    name: myns
+    annotations:
+      config.kubernetes.io/local-config: "true"
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'cfw/ns.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'cfw/ns.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  data:
+    namespace: vfw
+- apiVersion: kpt.dev/v1
+  kind: Kptfile
+  metadata:
+    name: hostdev-network-crd
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'hostdev-network-crd/Kptfile'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'hostdev-network-crd/Kptfile'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  info:
+    description: hostdev-network-crd
+  pipeline:
+    mutators:
+    - image: gcr.io/kpt-fn/set-namespace:v0.4.1
+      configPath: ns.yaml
+- apiVersion: v1
+  kind: ConfigMap
+  metadata: # kpt-merge: /kptfile.kpt.dev
+    name: myns
+    annotations:
+      config.kubernetes.io/local-config: "true"
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'hostdev-network-crd/ns.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'hostdev-network-crd/ns.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  data:
+    namespace: vfw
+- apiVersion: "k8s.cni.cncf.io/v1"
+  kind: NetworkAttachmentDefinition
+  metadata:
+    name: host-device-veth21
+    namespace: example
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'hostdev-network-crd/protected-private-net.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'hostdev-network-crd/protected-private-net.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  spec:
+    config: '{ "cniVersion": "0.3.0", "type": "host-device", "device": "veth21" }'
+- apiVersion: "k8s.cni.cncf.io/v1"
+  kind: NetworkAttachmentDefinition
+  metadata:
+    name: host-device-veth22
+    namespace: example
+    annotations:
+      config.kubernetes.io/index: '1'
+      config.kubernetes.io/path: 'hostdev-network-crd/protected-private-net.yaml'
+      internal.config.kubernetes.io/index: '1'
+      internal.config.kubernetes.io/path: 'hostdev-network-crd/protected-private-net.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  spec:
+    config: '{ "cniVersion": "0.3.0", "type": "host-device", "device": "veth22" }'
+- apiVersion: "k8s.cni.cncf.io/v1"
+  kind: NetworkAttachmentDefinition
+  metadata:
+    name: host-device-veth12
+    namespace: example
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'hostdev-network-crd/unprotected-private-net.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'hostdev-network-crd/unprotected-private-net.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  spec:
+    config: '{ "cniVersion": "0.3.0", "type": "host-device", "device": "veth12" }'
+- apiVersion: "k8s.cni.cncf.io/v1"
+  kind: NetworkAttachmentDefinition
+  metadata:
+    name: host-device-veth11
+    namespace: example
+    annotations:
+      config.kubernetes.io/index: '1'
+      config.kubernetes.io/path: 'hostdev-network-crd/unprotected-private-net.yaml'
+      internal.config.kubernetes.io/index: '1'
+      internal.config.kubernetes.io/path: 'hostdev-network-crd/unprotected-private-net.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  spec:
+    config: '{ "cniVersion": "0.3.0", "type": "host-device", "device": "veth11" }'
+- apiVersion: kpt.dev/v1
+  kind: Kptfile
+  metadata:
+    name: firewall-host-netdevice-pktgen
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'pktgen-host-netdevice/Kptfile'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'pktgen-host-netdevice/Kptfile'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  info:
+    description: firewall-host-netdevice-pktgen
+  pipeline:
+    mutators:
+    - image: gcr.io/kpt-fn/set-namespace:v0.4.1
+      configPath: ns.yaml
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: pktgen-host-netdevice-scripts-configmap
+    labels:
+      release: firewall-host-netdevice
+      app: pktgen-host-netdevice
+      chart: pktgen-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'pktgen-host-netdevice/configmap.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'pktgen-host-netdevice/configmap.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  data:
+    vpg_start.sh: "#!/bin/bash\n\n#update root ca (wr lab only)\napt-get update\n\necho 'Updte CA Cert'\nmkdir -p /usr/local/share/ca-certificates/extra\ncp /opt/rootCA.crt /usr/local/share/ca-certificates/extra/\nupdate-ca-certificates\napt install -y libnss3-tools\ncp /opt/ImportScript /root\nchmod a+x /root/ImportScript\n/root/ImportScript\n\napt-get update\napt-get install -y sudo curl net-tools iproute2 wget inetutils-ping vim\n\n#curl -s https://packagecloud.io/install/repositories/fdio/release/script.deb.sh | sudo bash\n\napt-get install -y gnupg\ncurl -k -L https://packagecloud.io/fdio/1901/gpgkey | sudo apt-key add -\n\ncat <<EOF > /etc/apt/sources.list.d/fdio_1901.list\ndeb https://packagecloud.io/fdio/1901/ubuntu/ bionic main\ndeb-src https://packagecloud.io/fdio/1901/ubuntu/ bionic main\nEOF\n\napt-get update\n\n#export VPP_VER=19.01.2-release\nexport VPP_VER=19.01.3-rc0~9-gbef25c30a~b79\napt-get install -y vpp=$VPP_VER vpp-lib=$VPP_VER\napt-get install -y vpp-plugins=$VPP_VER\n\nif [ -e /run/vpp/cli-vpp1.sock ]; then\n    rm /run/vpp/cli-vpp1.sock\nfi\n\napt-get install -y python3\n\npython3 /opt/vpgstarter.py\n\n# #\troot@vpktgen:/# taskset -p --cpu-list 1\n# #\tpid 1's current affinity list: 1,2,29\n\n# corelist=`taskset -p -c 1 |cut -d : -f 2 | sed 's/^ *//' | sed 's/ *$//'`\n# #extract master core\n# mastercoreidx=`echo $corelist | cut -d , -f 1`\n# #extract worker cores\n# workercorelist=`echo $corelist | sed -E 's/^[0-9]*,//'`\n\n# echo 'start... vpp'\n# vpp unix {cli-listen /run/vpp/cli-vpp1.sock} api-segment { prefix vpp1 } \\\n#     cpu { main-core $mastercoreidx  corelist-workers $workercorelist }\n\n# echo 'wait vpp be up ...'\n# while [ ! -e /run/vpp/cli-vpp1.sock ]; do\n#     sleep 1;\n# done\n\n# echo 'configure vpp ...'\n\n# ifconfig veth11 0.0.0.0\n# ifconfig veth11 down\n\n# HWADDR1=$(ifconfig veth11 |grep ether | tr -s ' ' | cut -d' ' -f 3)\n\n# vppctl -s /run/vpp/cli-vpp1.sock show ver\n# vppctl -s /run/vpp/cli-vpp1.sock show threads\n\n# vppctl -s /run/vpp/cli-vpp1.sock create host-interface name veth11 hw-addr $HWADDR1\n\n# vppctl -s /run/vpp/cli-vpp1.sock set int state host-veth11 up\n\n# vppctl -s /run/vpp/cli-vpp1.sock show int\n# vppctl -s /run/vpp/cli-vpp1.sock show hardware\n\n# vppctl -s /run/vpp/cli-vpp1.sock set int ip address host-veth11 10.10.1.2/24\n\n# vppctl -s /run/vpp/cli-vpp1.sock show int addr\n\n# vppctl -s /run/vpp/cli-vpp1.sock ip route add 10.10.2.0/24  via 10.10.1.1\n\n# vppctl -s /run/vpp/cli-vpp1.sock show ip fib\n\n# #vppctl -s /run/vpp/cli-vpp1.sock trace add af-packet-input 10\n\necho \"provision streams\"\n### pktgen config\nvppctl -s /run/vpp/cli-vpp1.sock loop create\nvppctl -s /run/vpp/cli-vpp1.sock set int ip address loop0 11.22.33.1/24\nvppctl -s /run/vpp/cli-vpp1.sock set int state loop0 up\n\ncd /opt\n\nmkdir /home/root\ncat <<EOF> /home/root/stream_fw_udp1_loop0\npacket-generator new {\n\t  name fw_udp1\n\t  rate 10\n\t  node ip4-input\n\t  size 64-64\n\t  no-recycle\n      interface loop0\n\t  data {\n\t\tUDP: 10.10.1.2 -> 10.10.2.2\n\t\tUDP: 15320 -> 8080\n\t\tlength 128 checksum 0 incrementing 1\n\t  }\n\t}\nEOF\n\nvppctl -s /run/vpp/cli-vpp1.sock  exec /home/root/stream_fw_udp1_loop0\n\n#vppctl -s /run/vpp/cli-vpp1.sock show packet-generator\n\n#vppctl -s /run/vpp/cli-vpp1.sock trace add pg-input 10\n\nvppctl -s /run/vpp/cli-vpp1.sock packet-generator enable\n\nvppctl -s /run/vpp/cli-vpp1.sock show packet-generator\n\nvppctl -s /run/vpp/cli-vpp1.sock show int\n\n#vppctl -s /run/vpp/cli-vpp1.sock packet-generator disable\n\n#vppctl -s /run/vpp/cli-vpp1.sock packet-generator delete fw_udp1\n\necho \"done\"\nsleep infinity"
+    vpgstarter.py: "#!/usr/bin/python\r\n\r\nimport os\r\nimport subprocess\r\nfrom time import sleep\r\nimport time\r\n\r\ndef start_vpp(master_core, worker_cores):\r\n    print(\"start vpp, master %s, worker_cores: %s\" % (master_core,worker_cores))\r\n    subprocess.check_call(\r\n        \"vpp unix {cli-listen /run/vpp/cli-vpp1.sock} api-segment { prefix vpp1 } \\\r\n            cpu { main-core %s  corelist-workers %s }\" % (master_core, worker_cores), \r\n            shell=True)\r\n    while not os.path.exists(\"/run/vpp/cli-vpp1.sock\"):\r\n        print(\"waiting for vpp up ...\")\r\n        time.sleep(1)\r\n        pass\r\n    print(\"configure vpp ...\")\r\n\r\n    subprocess.check_call(\"ifconfig veth11 0.0.0.0\", shell=True)\r\n    subprocess.check_call(\"ifconfig veth11 down\", shell=True)\r\n\r\n    status1, HWADDR1= subprocess.getstatusoutput(\"ifconfig veth11 |grep ether | tr -s ' ' | cut -d' ' -f 3\")\r\n    if status1 != 0:\r\n        print(\"Failed to get HW Addr\")\r\n        exit(-1)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock show ver\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock show threads\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock create host-interface name veth11 hw-addr %s\"%HWADDR1, shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock set int state host-veth11 up\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock set int ip address host-veth11 10.10.1.2/24\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock show hardware\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock show int\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock show int addr\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock ip route add 10.10.2.0/24  via 10.10.1.1\", shell=True)\r\n    subprocess.check_call(\"vppctl -s /run/vpp/cli-vpp1.sock show ip fib\", shell=True)\r\n\r\ndef extract_master_worker_cores():\r\n    status, coreliststr = subprocess.getstatusoutput(\r\n        \"taskset -p -c 1 |cut -d : -f 2 | sed 's/^ *//' | sed 's/ *$//'\")\r\n    print(\"coreliststr: %s\" % coreliststr)\r\n    corelist = cpu_list_decoder(coreliststr)\r\n    master_core = corelist[0] if len(corelist) > 0 else -1\r\n    worker_cores = corelist[1:] if len(corelist) > 1 else []\r\n    return master_core, worker_cores\r\n\r\ndef cpu_list_decoder(cpuliststr):\r\n    print(\"cpu list:\"+cpuliststr)\r\n    result = []\r\n    if cpuliststr == \"\":\r\n        return []\r\n    # split by ,\r\n    toplist = cpuliststr.split(',')\r\n    for ele in toplist:\r\n        if '-' not in ele:\r\n            result.append(int(ele))\r\n            continue\r\n\r\n        secondlist = ele.split('-')\r\n        start = int(secondlist[0])\r\n        end = int(secondlist[1])\r\n        while start <= end:\r\n            result.append(start)\r\n            start += 1\r\n    print(\"decoded: \"+ str(result))\r\n    return result\r\n\r\nmaster_core, worker_cores = extract_master_worker_cores()\r\nstart_vpp(master_core, worker_cores)\r\n\r\n# if __name__ == \"__main__\":\r\n#     print ('This is main of module \"cpu-list-decoder.py\"')\r\n#     cpu_list_decoder(\"3-5\")\r\n#     cpu_list_decoder(\"2,5-9\")\r\n#     cpu_list_decoder(\"2-4,4-8,11\")\r\n"
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: firewall-host-netdevice-pktgen-host-netdevice
+    labels:
+      release: firewall-host-netdevice
+      app: pktgen-host-netdevice
+      chart: pktgen-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'pktgen-host-netdevice/deployment.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'pktgen-host-netdevice/deployment.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: pktgen-host-netdevice
+        release: firewall-host-netdevice
+    template:
+      metadata:
+        labels:
+          app: pktgen-host-netdevice
+          release: firewall-host-netdevice
+        annotations:
+          k8s.v1.cni.cncf.io/networks: '[ { "name": "host-device-veth11", "interface": "veth11" } ]'
+      spec:
+        nodeSelector:
+          kubernetes.io/hostname: "controller-0"
+        containers:
+        - name: pktgen-host-netdevice
+          image: ubuntu:18.04
+          imagePullPolicy: IfNotPresent
+          tty: true
+          stdin: true
+          env:
+          - name: unprotectedNetCidr
+            value: "10.10.1.0/24"
+          - name: unprotectedNetGwIp
+            value: "10.10.1.1"
+          - name: protectedNetCidr
+            value: "10.10.2.0/24"
+          - name: protectedNetGwIp
+            value: "10.10.2.1"
+          - name: dcaeCollectorIp
+            value: "10.12.7.4"
+          - name: dcaeCollectorPort
+            value: "30235"
+          command: ["/bin/bash", "/opt/vpg_start.sh"]
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+              - CAP_SYS_ADMIN
+          volumeMounts:
+          - mountPath: /hugepages
+            name: hugepage
+          - name: lib-modules
+            mountPath: /lib/modules
+          - name: src
+            mountPath: /usr/src
+          - name: scripts
+            mountPath: /opt
+          resources:
+            requests:
+              cpu: "3"
+              memory: 4Gi
+              hugepages-2Mi: 256Mi
+            limits:
+              cpu: "3"
+              memory: 4Gi
+              hugepages-2Mi: 256Mi
+        volumes:
+        - name: hugepage
+          emptyDir:
+            medium: HugePages
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: src
+          hostPath:
+            path: /usr/src
+        - name: scripts
+          configMap:
+            name: pktgen-host-netdevice-scripts-configmap
+        imagePullSecrets:
+        - name: admin-registry-secret
+- apiVersion: v1
+  kind: ConfigMap
+  metadata: # kpt-merge: /kptfile.kpt.dev
+    name: myns
+    annotations:
+      config.kubernetes.io/local-config: "true"
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'pktgen-host-netdevice/ns.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'pktgen-host-netdevice/ns.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  data:
+    namespace: vfw
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: packetgen-service
+    labels:
+      app: pktgen-host-netdevice
+      chart: pktgen-host-netdevice
+      release: firewall-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'pktgen-host-netdevice/service.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'pktgen-host-netdevice/service.yaml'
+      internal.config.kubernetes.io/seqindent: 'wide'
+  spec:
+    type: NodePort
+    ports:
+    - port: 2831
+      nodePort: 30831
+    selector:
+      app: pktgen-host-netdevice
+      release: firewall-host-netdevice
+- apiVersion: kpt.dev/v1
+  kind: Kptfile
+  metadata:
+    name: firewall-host-netdevice-sink
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'sink-host-netdevice/Kptfile'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'sink-host-netdevice/Kptfile'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  info:
+    description: firewall-host-netdevice-sink
+  pipeline:
+    mutators:
+    - image: gcr.io/kpt-fn/set-namespace:v0.4.1
+      configPath: ns.yaml
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: sink-host-netdevice-scripts-configmap
+    labels:
+      app: sink-host-netdevice
+      chart: sink-host-netdevice
+      release: firewall-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'sink-host-netdevice/configmap.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'sink-host-netdevice/configmap.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  data:
+    vsn_start.sh: |-
+      #!/bin/bash
+
+      apt-get update
+      apt-get install -y sudo curl net-tools iproute2 inetutils-ping wget darkstat unzip
+
+      echo "provision interfaces"
+
+      ifconfig veth22 10.10.2.2/24
+
+      echo "add route entries"
+      ip route add 10.10.1.0/24 via 10.10.2.1
+
+      echo "update darkstat configuration"
+      sed -i "s/START_DARKSTAT=.*/START_DARKSTAT=yes/g;s/INTERFACE=.*/INTERFACE=\"-i veth22\"/g" /etc/darkstat/init.cfg
+
+      echo "start darkstat"
+
+      darkstat -i veth22
+
+      echo "done"
+      sleep infinity
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: firewall-host-netdevice-sink-host-netdevice
+    labels:
+      app: sink-host-netdevice
+      chart: sink-host-netdevice
+      release: firewall-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'sink-host-netdevice/deployment.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'sink-host-netdevice/deployment.yaml'
+      internal.config.kubernetes.io/seqindent: 'wide'
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: sink-host-netdevice
+        release: firewall-host-netdevice
+    template:
+      metadata:
+        labels:
+          app: sink-host-netdevice
+          release: firewall-host-netdevice
+        annotations:
+          k8s.v1.cni.cncf.io/networks: '[ { "name": "host-device-veth22", "interface": "veth22" } ]'
+      spec:
+        nodeSelector:
+          kubernetes.io/hostname: "controller-0"
+        containers:
+        - name: sink-host-netdevice
+          image: "ubuntu:18.04"
+          imagePullPolicy: IfNotPresent
+          tty: true
+          stdin: true
+          env:
+          - name: unprotectedNetCidr
+            value: "10.10.1.0/24"
+          - name: unprotectedNetGwIp
+            value: "10.10.1.1"
+          - name: protectedNetCidr
+            value: "10.10.2.0/24"
+          - name: protectedNetGwIp
+            value: "10.10.2.1"
+          - name: dcaeCollectorIp
+            value: "10.12.7.4"
+          - name: dcaeCollectorPort
+            value: "30235"
+          command: ["/bin/bash", "/opt/vsn_start.sh"]
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+              - CAP_SYS_ADMIN
+          volumeMounts:
+          - name: scripts
+            mountPath: /opt
+          resources:
+            requests:
+              cpu: 1
+              memory: 4Gi
+            limits:
+              cpu: 1
+              memory: 4Gi
+        volumes:
+        - name: scripts
+          configMap:
+            name: sink-host-netdevice-scripts-configmap
+        imagePullSecrets:
+        - name: admin-registry-secret
+- apiVersion: v1
+  kind: ConfigMap
+  metadata: # kpt-merge: /kptfile.kpt.dev
+    name: myns
+    annotations:
+      config.kubernetes.io/local-config: "true"
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'sink-host-netdevice/ns.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'sink-host-netdevice/ns.yaml'
+      internal.config.kubernetes.io/seqindent: 'compact'
+  data:
+    namespace: vfw
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: sink-service
+    labels:
+      app: sink-host-netdevice
+      release: firewall-host-netdevice
+      chart: sink-host-netdevice
+    annotations:
+      config.kubernetes.io/index: '0'
+      config.kubernetes.io/path: 'sink-host-netdevice/service.yaml'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/path: 'sink-host-netdevice/service.yaml'
+      internal.config.kubernetes.io/seqindent: 'wide'
+  spec:
+    type: NodePort
+    ports:
+    - port: 667
+      nodePort: 30667
+    selector:
+      app: sink-host-netdevice
+      release: firewall-host-netdevice
