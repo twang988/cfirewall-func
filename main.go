@@ -51,30 +51,72 @@ func mergeCrdAndCfwData(rl *fn.ResourceList) error {
 	// map unprotectedNetPortVfw and protectedNetPortVfw
 	// from crd yaml to deployment.yaml/template/metadata/annotations
 
-	//set unprotectedNetPortVfw and protectedNetPortVfw for crd
+	var cfwInfo CfwNetInfo
+	//set ifname or datanet name for crd
 	for _, obj := range rl.Items {
-		if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") && obj.GetAnnotation("protected-private-net-ifname") != "" {
-			ifname := obj.GetAnnotation("protected-private-net-ifname")
-			obj.RemoveNestedFieldOrDie("metadata", "annotations", "protected-private-net-ifname")
+		if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
+			obj.GetAnnotation("hostdev-protected-private-net-ifname") != "" {
+			// Logic of processing protected hostdev crd
+			ifname := obj.GetAnnotation("hostdev-protected-private-net-ifname")
+			//obj.RemoveNestedFieldOrDie("metadata", "annotations", "hostdev-protected-private-net-ifname")
 
 			crdName := "host-device-" + ifname
 			obj.SetName(crdName)
 			obj.SetNestedString(makeHostDevConfig(ifname), "spec", "config")
+			cfwInfo.hostDevProtectedIfName = ifname
+
 			_info := fmt.Sprintf("Change protected-private-net crd ifname to %s", ifname)
 			rl.Results = append(rl.Results, fn.GeneralResult(_info, fn.Info))
-		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") && obj.GetAnnotation("unprotected-private-net-ifname") != "" {
-			ifname := obj.GetAnnotation("unprotected-private-net-ifname")
-			obj.RemoveNestedFieldOrDie("metadata", "annotations", "unprotected-private-net-ifname")
+
+		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
+			obj.GetAnnotation("hostdev-unprotected-private-net-ifname") != "" {
+			// Logic of processing unprotected hostdev crd
+			ifname := obj.GetAnnotation("hostdev-unprotected-private-net-ifname")
+			//obj.RemoveNestedFieldOrDie("metadata", "annotations", "hostdev-unprotected-private-net-ifname")
 
 			crdName := "host-device-" + ifname
 			obj.SetName(crdName)
 			obj.SetNestedString(makeHostDevConfig(ifname), "spec", "config")
+			cfwInfo.hostDevUnprotectedIfName = ifname
+
 			_info := fmt.Sprintf("Change unprotected-private-net crd ifname to %s", ifname)
 			rl.Results = append(rl.Results, fn.GeneralResult(_info, fn.Info))
+
+		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
+			obj.GetAnnotation("sriov-protected-net-providername") != "" {
+			// Logic of processing protected sr-iov crd
+		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
+			obj.GetAnnotation("sriov-unprotected-net-providername") != "" {
+			// Logic of processing unprotected sr-iov crd
+		}
+	}
+
+	//set ifname or datanet name for deployment
+	for _, obj := range rl.Items {
+		if obj.IsGVK("apps", "v1", "Deployment") &&
+			obj.GetAnnotation("cfw-deployment") == "hostdev" {
+			// Logic of processing cfirewall hostdev deployment
+			if cfwInfo.hostDevProtectedIfName == "" || cfwInfo.hostDevUnprotectedIfName == "" {
+				return fmt.Errorf("no valid CfwNetInfo:%+v", cfwInfo)
+			}
+			return nil
+
+		} else if obj.IsGVK("apps", "v1", "Deployment") &&
+			obj.GetAnnotation("cfw-deployment") == "sriov" {
+			// Logic of processing cfirewall sriov deployment
+			//TODO
+			return nil
 		}
 	}
 	//return fmt.Errorf("-----start--------%+v------end-----\n", rl)
-	return nil
+	return fmt.Errorf("no valid cfw-deployment found")
+}
+
+type CfwNetInfo struct {
+	hostDevProtectedIfName          string //ifname like eth21
+	hostDevUnprotectedIfName        string //ifname like eth11
+	sriovProtectedNetProviderName   string //datanet name like datanet_1
+	sriovUnprotectedNetProviderName string //datanet name like datanet_1
 }
 
 type CfwConfig struct {
