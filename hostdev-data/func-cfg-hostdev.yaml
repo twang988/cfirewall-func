@@ -1,46 +1,25 @@
-apiVersion: infra.nephio.org/v1alpha1
+apiVersion: v1
 kind: CfwConfig
-metadata:
-  name: cfwcfg-hostdev
+metadata: # kpt-merge: /kptfile.kpt.dev
+  name: cfwconfig-example
   annotations:
     config.kubernetes.io/local-config: "true"
-name: cfwexamplecfg
-networkInfra:
-  type: hostdev # hostdev or sriov
-  
-  unprotectedNetPortVpg: veth11
-  unprotectedNetPortVfw: veth12
-  unprotectedNetCidr: 10.10.1.0/24
-  unprotectedNetGwIp: 10.10.1.1
-
-  protectedNetPortVfw: veth21
-  protectedNetPortVsn: veth22
-  protectedNetCidr: 10.10.2.0/24
-  protectedNetGwIp: 10.10.2.1
-
-  vfwPrivateIp0: 10.10.1.1
-  vfwPrivateIp1: 10.10.2.1
-  vpgPrivateIp0: 10.10.1.2
-
-  vsnPrivateIp0: 10.10.2.2
-  dcaeCollectorIp: 10.12.7.4
-  dcaeCollectorPort: 30235
-
-resources:
-  cpu: 3
-  memory: 4Gi
-  hugepage_2m: 256Mi
-
-
-image:
-  repository: ubuntu
-  tag: 18.04
-  pullPolicy: IfNotPresent
-
-pkgrepolist:
-- repo: url1
-  type: core-firewall
-  proxy: ppp1
-- repo: url2
-  type: network-crd
-  proxy: ppp2
+configMaps:
+  - pkgtype: coreFirewall
+    upstreamlock:
+      origintype: git
+      gitlock:
+        repo: https://github.com/twang988/nephio-blueprint.git
+        directory: /firewall-host-netdevice/cfw/
+        ref: coredns-caching/v1
+        commit: 8e5900fe3e6e69516c5207977e5c836884cb9cf4
+        proxy: ppp1
+  - pkgtype: networkInfraCrd
+    upstreamlock:
+      origintype: git
+      gitlock:
+        repo: https://github.com/twang988/nephio-blueprint.git
+        directory: /firewall-host-netdevice/cfw/
+        ref: coredns-caching/v1
+        commit: 8e5900fe3e6e69516c5207977e5c836884cb9cf4
+        proxy: ppp1

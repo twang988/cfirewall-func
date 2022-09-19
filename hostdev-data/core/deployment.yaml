@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firewall-host-netdevice
+  labels:
+    release: firewall-host-netdevice
+    app: firewall-host-netdevice
+    chart: firewall-host-netdevice
+  namespace: vfw
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: firewall-host-netdevice
+      release: firewall-host-netdevice
+  template:
+    metadata:
+      labels:
+        app: firewall-host-netdevice
+        release: firewall-host-netdevice
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[ { "name": "host-device-veth12", "interface": "veth12" }, { "name": "host-device-veth21", "interface": "veth21" } ]'
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "controller-0"
+      containers:
+      - name: firewall-host-netdevice
+        image: ubuntu:18.04
+        imagePullPolicy: IfNotPresent
+        tty: true
+        stdin: true
+        env:
+        - name: unprotectedNetCidr
+          value: "10.10.1.0/24"
+        - name: unprotectedNetGwIp
+          value: "10.10.1.1"
+        - name: protectedNetCidr
+          value: "10.10.2.0/24"
+        - name: protectedNetGwIp
+          value: "10.10.2.1"
+        - name: dcaeCollectorIp
+          value: "10.12.7.4"
+        - name: dcaeCollectorPort
+          value: "30235"
+        command: ["/bin/bash", "/opt/vfw_start.sh"]
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - CAP_SYS_ADMIN
+        volumeMounts:
+        - mountPath: /hugepages
+          name: hugepage
+        - name: lib-modules
+          mountPath: /lib/modules
+        - name: src
+          mountPath: /usr/src
+        - name: scripts
+          mountPath: /opt
+        resources:
+          requests:
+            cpu: 3
+            memory: 4Gi
+            hugepages-2Mi: 256Mi
+          limits:
+            cpu: 3
+            memory: 4Gi
+            hugepages-2Mi: 256Mi
+      volumes:
+      - name: hugepage
+        emptyDir:
+          medium: HugePages
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+      - name: src
+        hostPath:
+          path: /usr/src
+      - name: scripts
+        configMap:
+          name: firewall-host-netdevice-scripts-configmap
+      imagePullSecrets:
+      - name: admin-registry-secret
