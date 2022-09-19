@@ -1,15 +1,10 @@
 apiVersion: "k8s.cni.cncf.io/v1"
 kind: NetworkAttachmentDefinition
 metadata:
-  name: host-device-veth12
+  name: host-device-ifname
   namespace: vfw
+  annotations:
+    unprotected-private-net-ifname: "veth12"
 spec:
-  config: '{ "cniVersion": "0.3.0", "type": "host-device", "device": "veth12" }'
----
-apiVersion: "k8s.cni.cncf.io/v1"
-kind: NetworkAttachmentDefinition
-metadata:
-  name: host-device-veth11
-  namespace: vfw
-spec:
-  config: '{ "cniVersion": "0.3.0", "type": "host-device", "device": "veth11" }'
+  config: '{ "cniVersion": "0.3.0", "type": "host-device", "device": "ifname" }'
+

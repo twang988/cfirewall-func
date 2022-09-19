@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -17,22 +18,62 @@ func Run(rl *fn.ResourceList) (bool, error) {
 	}
 	//fmt.Printf("-------------%+v-----------\n", cf)
 	//return true, fmt.Errorf("-------------%+v-----------\n", cfw_config)
-	return true, nil
+
+	//if obj.IsGVK("", "v1", "ConfigMap") && obj.GetAnnotation("config.kubernetes.io/local-config") == "true" {
+	//	continue
+	//}
+
+	// process resource
+	// Treat as local resource first
+	if len(cfw_config.ConfigMaps) != 2 {
+		// if configMaps in funcConfig number not not match, process as local config
+		if err := mergeCrdAndCfwData(rl); err != nil {
+			return false, err
+		}
+		return true, nil
+	} else {
+		//TODO: process remote packages
+		return true, nil
+	}
+
+}
+func makeHostDevConfig(ifname string) string {
+	devcfg := make(map[string]string)
+	devcfg["cniVersion"] = "0.3.0"
+	devcfg["type"] = "host-device"
+	devcfg["device"] = ifname
+	jsonStr, _ := json.Marshal(devcfg)
+	return string(jsonStr)
 }
 
-func applyCfwConfig(rl *fn.ResourceList, cf *fn.KubeObject) error {
-	networkType := cf.NestedStringOrDie("networkInfra", "type")
-	if networkType == "" {
-		return fmt.Errorf("could not find %s/%s in CfwConfig",
-			"networkInfra", "type")
-	}
+func mergeCrdAndCfwData(rl *fn.ResourceList) error {
+
+	// map unprotectedNetPortVfw and protectedNetPortVfw
+	// from crd yaml to deployment.yaml/template/metadata/annotations
+
+	//set unprotectedNetPortVfw and protectedNetPortVfw for crd
 	for _, obj := range rl.Items {
-		if obj.IsGVK("apps", "v1", "Deployment") {
-			//fmt.Printf("-------------%+v-----------\n", obj.GetAnnotation())
+		if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") && obj.GetAnnotation("protected-private-net-ifname") != "" {
+			ifname := obj.GetAnnotation("protected-private-net-ifname")
+			obj.RemoveNestedFieldOrDie("metadata", "annotations", "protected-private-net-ifname")
+
+			crdName := "host-device-" + ifname
+			obj.SetName(crdName)
+			obj.SetNestedString(makeHostDevConfig(ifname), "spec", "config")
+			_info := fmt.Sprintf("Change protected-private-net crd ifname to %s", ifname)
+			rl.Results = append(rl.Results, fn.GeneralResult(_info, fn.Info))
+		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") && obj.GetAnnotation("unprotected-private-net-ifname") != "" {
+			ifname := obj.GetAnnotation("unprotected-private-net-ifname")
+			obj.RemoveNestedFieldOrDie("metadata", "annotations", "unprotected-private-net-ifname")
+
+			crdName := "host-device-" + ifname
+			obj.SetName(crdName)
+			obj.SetNestedString(makeHostDevConfig(ifname), "spec", "config")
+			_info := fmt.Sprintf("Change unprotected-private-net crd ifname to %s", ifname)
+			rl.Results = append(rl.Results, fn.GeneralResult(_info, fn.Info))
 		}
 	}
-	//fmt.Printf("-------------%+v-----------\n", networkType)
-	cf.SetAnnotation("akey", "avalue")
+	//return fmt.Errorf("-----start--------%+v------end-----\n", rl)
 	return nil
 }
 
