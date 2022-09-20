@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/GoogleContainerTools/kpt-functions-sdk/go/fn"
 	"sigs.k8s.io/kustomize/kyaml/yaml"
@@ -24,7 +27,7 @@ func Run(rl *fn.ResourceList) (bool, error) {
 	//}
 
 	// process resource
-	// Treat as local resource first
+	// Treat as local resource if configmap number not match
 	if len(cfw_config.ConfigMaps) != 2 {
 		// if configMaps in funcConfig number not not match, process as local config
 		if err := mergeCrdAndCfwData(rl); err != nil {
@@ -32,11 +35,136 @@ func Run(rl *fn.ResourceList) (bool, error) {
 		}
 		return true, nil
 	} else {
-		//TODO: process remote packages
+		rl.Results = append(rl.Results, fn.GeneralResult("Using remote git repos", fn.Info))
+		if err := makeResourceListFromGit(cfw_config, rl); err != nil {
+			return false, err
+		}
+		if err := mergeCrdAndCfwData(rl); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 
 }
+func cleanTmpGitLocalPath() {
+	rmArgs := fmt.Sprintf("-rf %s", tmpGitLocalPath)
+	args := strings.Fields(rmArgs)
+	cmd := exec.Command("rm", args...)
+	cmd.Run()
+}
+func switchGitTag(tag string) error {
+	if tag != "" {
+		argstr := fmt.Sprintf("checkout %s", tag)
+		args := strings.Fields(argstr)
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpGitLocalPath
+		return cmd.Run()
+	}
+	return nil
+}
+func setGitProxy(proxy string) error {
+	if proxy != "" {
+		argstr := fmt.Sprintf("config --global https.proxy %s", proxy)
+		args := strings.Fields(argstr)
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpGitLocalPath
+		err := cmd.Run()
+		if err != nil {
+			return err
+		}
+		argstr = fmt.Sprintf("config --global http.proxy %s", proxy)
+		args = strings.Fields(argstr)
+		cmd = exec.Command("git", args...)
+		err = cmd.Run()
+		if err != nil {
+			return err
+		}
+	} else {
+		//clean up provious proxy
+		args := strings.Fields("config --global --unset http.proxy")
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpGitLocalPath
+		err := cmd.Run()
+		if err != nil {
+			return err
+		}
+		args = strings.Fields("config --global --unset https.proxy")
+		cmd = exec.Command("git", args...)
+		err = cmd.Run()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func findFileRecur(path string, suffix string) []string {
+	// Find *.yaml or *.yml recursively
+	var flist []string
+	stdout := new(bytes.Buffer)
+	argstr := fmt.Sprintf("%s -name *.%s", path, suffix)
+	args := strings.Fields(argstr)
+	cmd := exec.Command("find", args...)
+	cmd.Stdout = stdout
+	cmd.Dir = "/"
+	err := cmd.Run()
+	if err != nil {
+		return flist
+	}
+	return strings.Fields(stdout.String())
+
+}
+func convertFolderToKubeObjs(path string) (obj fn.KubeObjects, err error) {
+	flist := findFileRecur(path, "yaml")
+	flist = append(flist, findFileRecur(path, "yml")...)
+	for _, file := range flist {
+		cont, err := os.ReadFile(file)
+		if err != nil {
+			return nil, err
+		}
+
+		o, err := fn.ParseKubeObject(cont)
+		if err != nil {
+			return nil, err
+		}
+		obj = append(obj, o)
+	}
+	return obj, nil
+}
+func makeResourceListFromGit(cfwcfg CfwConfig, rl *fn.ResourceList) error {
+	for _, cm := range cfwcfg.ConfigMaps {
+		cleanTmpGitLocalPath()
+		stdout := new(bytes.Buffer)
+		stderr := new(bytes.Buffer)
+		gitArgs := fmt.Sprintf("clone %s %s", cm.UpstreamLock.Git.Repo, tmpGitLocalPath)
+		args := strings.Fields(gitArgs)
+		cmd := exec.Command("git", args...)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("unable to run: '%s %s' with env=%s; %q: %q",
+				"git", args[0], "env", err.Error(), stderr.String())
+		}
+		err = switchGitTag(cm.UpstreamLock.Git.Ref)
+		if err != nil {
+			return fmt.Errorf("unable to switch tag to %s",
+				cm.UpstreamLock.Git.Ref)
+		}
+		err = setGitProxy(cm.UpstreamLock.Git.Proxy)
+		if err != nil {
+			return fmt.Errorf("unable to setGitProxy %s",
+				cm.UpstreamLock.Git.Proxy)
+		}
+		rl.Items, err = convertFolderToKubeObjs(tmpGitLocalPath)
+		//fmt.Printf("------%+v------\n", rl.Items)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func makeHostDevConfig(ifname string) string {
 	devcfg := make(map[string]string)
 	devcfg["cniVersion"] = "0.3.0"
@@ -142,6 +270,7 @@ func mergeCrdAndCfwData(rl *fn.ResourceList) error {
 
 const sriovPrefix string = "sriov-device-"
 const hostdevPrefix string = "host-device-"
+const tmpGitLocalPath string = "/tmp/git/"
 
 type CfwNetInfo struct {
 	hostDevProtectedIfName          string //ifname like eth21

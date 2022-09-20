@@ -2,7 +2,7 @@ apiVersion: "k8s.cni.cncf.io/v1"
 kind: NetworkAttachmentDefinition
 metadata:
   name: host-device-ifname
-  namespace: vfw
+  namespace: example
   annotations:
     netcrd/hostdev.protected.private.net.ifname: "veth21"
 spec:
