@@ -6,7 +6,7 @@ info:
   description: firewall-host-netdevice
 pipeline:
   mutators:
-  - image: registry.local:9001/cfirewall-func:1.0
+  - image: docker.io/wang5150753/cfirewall-func:1.0
     configPath: func-cfg-hostdev.yaml
   - image: gcr.io/kpt-fn/set-namespace:v0.4.1
     configPath: ns.yaml

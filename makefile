@@ -1,6 +1,6 @@
 NAME := cfirewall-func
 TAG ?= 1.0
-REGISTRY=registry.local:9001
+REGISTRY="docker.io/wang5150753"
 IMAGE := $(REGISTRY)/$(NAME):$(TAG)
 
 

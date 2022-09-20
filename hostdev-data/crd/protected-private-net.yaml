@@ -4,7 +4,7 @@ metadata:
   name: host-device-ifname
   namespace: vfw
   annotations:
-    hostdev-protected-private-net-ifname: "veth21"
+    netcrd/hostdev.protected.private.net.ifname: "veth21"
 spec:
   config: '{ "cniVersion": "0.3.0", "type": "host-device", "device": "ifname" }'
 

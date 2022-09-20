@@ -45,6 +45,29 @@ func makeHostDevConfig(ifname string) string {
 	jsonStr, _ := json.Marshal(devcfg)
 	return string(jsonStr)
 }
+func makeDeploymentNetworks(cfwnet CfwNetInfo) string {
+	var netList []map[string]string
+
+	if cfwnet.hostDevProtectedIfName != "" && cfwnet.hostDevUnprotectedIfName != "" {
+		// Make host-dev k8s.v1.cni.cncf.io/networks data
+		netcfg1 := make(map[string]string)
+		netcfg1["name"] = hostdevPrefix + cfwnet.hostDevUnprotectedIfName
+		netcfg1["interface"] = cfwnet.hostDevUnprotectedIfName
+		netList = append(netList, netcfg1)
+		netcfg2 := make(map[string]string)
+
+		netcfg2["name"] = hostdevPrefix + cfwnet.hostDevProtectedIfName
+		netcfg2["interface"] = cfwnet.hostDevProtectedIfName
+		netList = append(netList, netcfg2)
+
+		jsonStr, _ := json.Marshal(netList)
+		return string(jsonStr)
+	} else if cfwnet.sriovProtectedNetProviderName != "" && cfwnet.sriovUnprotectedNetProviderName != "" {
+		//TODO
+		return ""
+	}
+	return ""
+}
 
 func mergeCrdAndCfwData(rl *fn.ResourceList) error {
 
@@ -55,12 +78,12 @@ func mergeCrdAndCfwData(rl *fn.ResourceList) error {
 	//set ifname or datanet name for crd
 	for _, obj := range rl.Items {
 		if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
-			obj.GetAnnotation("hostdev-protected-private-net-ifname") != "" {
+			obj.GetAnnotation("netcrd/hostdev.protected.private.net.ifname") != "" {
 			// Logic of processing protected hostdev crd
-			ifname := obj.GetAnnotation("hostdev-protected-private-net-ifname")
-			//obj.RemoveNestedFieldOrDie("metadata", "annotations", "hostdev-protected-private-net-ifname")
+			ifname := obj.GetAnnotation("netcrd/hostdev.protected.private.net.ifname")
+			//obj.RemoveNestedFieldOrDie("metadata", "annotations", "netcrd/hostdev.protected.private.net.ifname")
 
-			crdName := "host-device-" + ifname
+			crdName := hostdevPrefix + ifname
 			obj.SetName(crdName)
 			obj.SetNestedString(makeHostDevConfig(ifname), "spec", "config")
 			cfwInfo.hostDevProtectedIfName = ifname
@@ -69,12 +92,12 @@ func mergeCrdAndCfwData(rl *fn.ResourceList) error {
 			rl.Results = append(rl.Results, fn.GeneralResult(_info, fn.Info))
 
 		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
-			obj.GetAnnotation("hostdev-unprotected-private-net-ifname") != "" {
+			obj.GetAnnotation("netcrd/hostdev.unprotected.private.net.ifname") != "" {
 			// Logic of processing unprotected hostdev crd
-			ifname := obj.GetAnnotation("hostdev-unprotected-private-net-ifname")
-			//obj.RemoveNestedFieldOrDie("metadata", "annotations", "hostdev-unprotected-private-net-ifname")
+			ifname := obj.GetAnnotation("netcrd/hostdev.unprotected.private.net.ifname")
+			//obj.RemoveNestedFieldOrDie("metadata", "annotations", "netcrd/hostdev.unprotected.private.net.ifname")
 
-			crdName := "host-device-" + ifname
+			crdName := hostdevPrefix + ifname
 			obj.SetName(crdName)
 			obj.SetNestedString(makeHostDevConfig(ifname), "spec", "config")
 			cfwInfo.hostDevUnprotectedIfName = ifname
@@ -85,32 +108,40 @@ func mergeCrdAndCfwData(rl *fn.ResourceList) error {
 		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
 			obj.GetAnnotation("sriov-protected-net-providername") != "" {
 			// Logic of processing protected sr-iov crd
+			//TODO
 		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
 			obj.GetAnnotation("sriov-unprotected-net-providername") != "" {
 			// Logic of processing unprotected sr-iov crd
+			//TODO
 		}
 	}
 
 	//set ifname or datanet name for deployment
 	for _, obj := range rl.Items {
 		if obj.IsGVK("apps", "v1", "Deployment") &&
-			obj.GetAnnotation("cfw-deployment") == "hostdev" {
+			obj.GetAnnotation("cfw/deployment") == "hostdev" {
 			// Logic of processing cfirewall hostdev deployment
 			if cfwInfo.hostDevProtectedIfName == "" || cfwInfo.hostDevUnprotectedIfName == "" {
 				return fmt.Errorf("no valid CfwNetInfo:%+v", cfwInfo)
 			}
+			makeDeploymentNetworks(cfwInfo)
+			obj.SetNestedString(makeDeploymentNetworks(cfwInfo), "spec", "template",
+				"metadata", "annotations", "k8s.v1.cni.cncf.io/networks")
 			return nil
 
 		} else if obj.IsGVK("apps", "v1", "Deployment") &&
-			obj.GetAnnotation("cfw-deployment") == "sriov" {
+			obj.GetAnnotation("cfw/deployment") == "sriov" {
 			// Logic of processing cfirewall sriov deployment
 			//TODO
 			return nil
 		}
 	}
 	//return fmt.Errorf("-----start--------%+v------end-----\n", rl)
-	return fmt.Errorf("no valid cfw-deployment found")
+	return fmt.Errorf("no valid annotation cfw/deployment found")
 }
+
+const sriovPrefix string = "sriov-device-"
+const hostdevPrefix string = "host-device-"
 
 type CfwNetInfo struct {
 	hostDevProtectedIfName          string //ifname like eth21
