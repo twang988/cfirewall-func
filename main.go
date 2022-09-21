@@ -24,7 +24,7 @@ func Run(rl *fn.ResourceList) (bool, error) {
 
 	// process resource
 	// Treat as local resource if configmap number not match
-	if len(cfw_config.ConfigMaps) != 2 {
+	if len(cfw_config.ConfigMaps) != 1 {
 		// if configMaps in funcConfig number not not match, process as local config
 		if err := generate(rl, cfw_config); err != nil {
 			return false, err
