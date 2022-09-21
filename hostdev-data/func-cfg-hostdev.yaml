@@ -11,7 +11,7 @@ configMaps:
       gitlock:
         repo: https://github.com/twang988/cfirewall-func.git
         directory: /hostdev-data/core/
-        ref: poc/v1
+        ref: main
         commit: 703dc70f77821f6b23f87ae37cd178867d5309a1
         proxy: http://147.11.252.42:9090
   - pkgtype: dummy
