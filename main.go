@@ -22,24 +22,21 @@ func Run(rl *fn.ResourceList) (bool, error) {
 	//fmt.Printf("-------------%+v-----------\n", cf)
 	//return true, fmt.Errorf("-------------%+v-----------\n", cfw_config)
 
-	//if obj.IsGVK("", "v1", "ConfigMap") && obj.GetAnnotation("config.kubernetes.io/local-config") == "true" {
-	//	continue
-	//}
-
 	// process resource
 	// Treat as local resource if configmap number not match
 	if len(cfw_config.ConfigMaps) != 2 {
 		// if configMaps in funcConfig number not not match, process as local config
-		if err := mergeCrdAndCfwData(rl); err != nil {
+		if err := generate(rl, cfw_config); err != nil {
 			return false, err
 		}
+		rl.Results = append(rl.Results, fn.GeneralResult("Using local file", fn.Info))
 		return true, nil
 	} else {
 		rl.Results = append(rl.Results, fn.GeneralResult("Using remote git repos", fn.Info))
 		if err := makeResourceListFromGit(cfw_config, rl); err != nil {
 			return false, err
 		}
-		if err := mergeCrdAndCfwData(rl); err != nil {
+		if err := generate(rl, cfw_config); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -173,115 +170,102 @@ func makeHostDevConfig(ifname string) string {
 	jsonStr, _ := json.Marshal(devcfg)
 	return string(jsonStr)
 }
-func makeDeploymentNetworks(cfwnet CfwNetInfo) string {
+func makeDeploymentNetworks(cfwcfg CfwConfig) string {
 	var netList []map[string]string
 
-	if cfwnet.hostDevProtectedIfName != "" && cfwnet.hostDevUnprotectedIfName != "" {
-		// Make host-dev k8s.v1.cni.cncf.io/networks data
-		netcfg1 := make(map[string]string)
-		netcfg1["name"] = hostdevPrefix + cfwnet.hostDevUnprotectedIfName
-		netcfg1["interface"] = cfwnet.hostDevUnprotectedIfName
-		netList = append(netList, netcfg1)
-		netcfg2 := make(map[string]string)
-
-		netcfg2["name"] = hostdevPrefix + cfwnet.hostDevProtectedIfName
-		netcfg2["interface"] = cfwnet.hostDevProtectedIfName
-		netList = append(netList, netcfg2)
-
-		jsonStr, _ := json.Marshal(netList)
-		return string(jsonStr)
-	} else if cfwnet.sriovProtectedNetProviderName != "" && cfwnet.sriovUnprotectedNetProviderName != "" {
-		//TODO
-		return ""
-	}
-	return ""
-}
-
-func mergeCrdAndCfwData(rl *fn.ResourceList) error {
-
-	// map unprotectedNetPortVfw and protectedNetPortVfw
-	// from crd yaml to deployment.yaml/template/metadata/annotations
-
-	var cfwInfo CfwNetInfo
-	//set ifname or datanet name for crd
-	for _, obj := range rl.Items {
-		if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
-			obj.GetAnnotation("netcrd/hostdev.protected.private.net.ifname") != "" {
-			// Logic of processing protected hostdev crd
-			ifname := obj.GetAnnotation("netcrd/hostdev.protected.private.net.ifname")
-			//obj.RemoveNestedFieldOrDie("metadata", "annotations", "netcrd/hostdev.protected.private.net.ifname")
-
-			crdName := hostdevPrefix + ifname
-			obj.SetName(crdName)
-			obj.SetNestedString(makeHostDevConfig(ifname), "spec", "config")
-			cfwInfo.hostDevProtectedIfName = ifname
-
-			_info := fmt.Sprintf("Change protected-private-net crd ifname to %s", ifname)
-			rl.Results = append(rl.Results, fn.GeneralResult(_info, fn.Info))
-
-		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
-			obj.GetAnnotation("netcrd/hostdev.unprotected.private.net.ifname") != "" {
-			// Logic of processing unprotected hostdev crd
-			ifname := obj.GetAnnotation("netcrd/hostdev.unprotected.private.net.ifname")
-			//obj.RemoveNestedFieldOrDie("metadata", "annotations", "netcrd/hostdev.unprotected.private.net.ifname")
-
-			crdName := hostdevPrefix + ifname
-			obj.SetName(crdName)
-			obj.SetNestedString(makeHostDevConfig(ifname), "spec", "config")
-			cfwInfo.hostDevUnprotectedIfName = ifname
-
-			_info := fmt.Sprintf("Change unprotected-private-net crd ifname to %s", ifname)
-			rl.Results = append(rl.Results, fn.GeneralResult(_info, fn.Info))
-
-		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
-			obj.GetAnnotation("sriov-protected-net-providername") != "" {
-			// Logic of processing protected sr-iov crd
-			//TODO
-		} else if obj.IsGVK("k8s.cni.cncf.io", "v1", "NetworkAttachmentDefinition") &&
-			obj.GetAnnotation("sriov-unprotected-net-providername") != "" {
-			// Logic of processing unprotected sr-iov crd
+	for _, netif := range cfwcfg.DeploymentSelector.NadIfnames {
+		if netif.Type == hostdevType {
+			netcfg := make(map[string]string)
+			netcfg["name"] = hostdevPrefix + netif.Vdev
+			netcfg["interface"] = netif.Vdev
+			netList = append(netList, netcfg)
+		} else if netif.Type == sriovType {
 			//TODO
 		}
 	}
+	jsonStr, _ := json.Marshal(netList)
+	return string(jsonStr)
+}
+func generateNetCrd(cfwcfg CfwConfig, objs []*fn.KubeObject) ([]*fn.KubeObject, error) {
+	for _, netif := range cfwcfg.DeploymentSelector.NadIfnames {
+
+		if netif.Type == hostdevType {
+			o := fn.NewEmptyKubeObject()
+			o.SetAPIVersion("k8s.cni.cncf.io/v1")
+			o.SetKind("NetworkAttachmentDefinition")
+			o.SetName(hostdevPrefix + netif.Vdev)
+			o.SetNamespace("example")
+			o.SetAnnotation("networkname", netif.Networkname)
+			o.SetNestedString(makeHostDevConfig(netif.Phydev), "spec", "config")
+			//return nil, fmt.Errorf("---%+v--\n", o)
+
+			objs = append(objs, o)
+		} else if netif.Type == sriovType {
+			//TODO
+		}
+	}
+	return objs, nil
+}
+
+func generate(rl *fn.ResourceList, cfwcfg CfwConfig) error {
+
+	//var cfwInfo CfwNetInfo
+
+	// Generate Net CRDs
+	var err error
+	rl.Items, err = generateNetCrd(cfwcfg, rl.Items)
+	if err != nil {
+		return err
+	}
+
+	//return fmt.Errorf("\n###\n%+v\n###\n", rl.Items)
 
 	//set ifname or datanet name for deployment
+
+	// Get deployment labels to match
+	depLabels := make(map[string]string)
+	for _, label := range cfwcfg.DeploymentSelector.MatchLabels {
+		depLabels[label.Key] = label.Val
+	}
+
 	for _, obj := range rl.Items {
 		if obj.IsGVK("apps", "v1", "Deployment") &&
-			obj.GetAnnotation("cfw/deployment") == "hostdev" {
-			// Logic of processing cfirewall hostdev deployment
-			if cfwInfo.hostDevProtectedIfName == "" || cfwInfo.hostDevUnprotectedIfName == "" {
-				return fmt.Errorf("no valid CfwNetInfo:%+v", cfwInfo)
-			}
-			makeDeploymentNetworks(cfwInfo)
-			obj.SetNestedString(makeDeploymentNetworks(cfwInfo), "spec", "template",
+			obj.HasLabels(depLabels) {
+			obj.SetNestedString(makeDeploymentNetworks(cfwcfg), "spec", "template",
 				"metadata", "annotations", "k8s.v1.cni.cncf.io/networks")
-			return nil
-
-		} else if obj.IsGVK("apps", "v1", "Deployment") &&
-			obj.GetAnnotation("cfw/deployment") == "sriov" {
-			// Logic of processing cfirewall sriov deployment
-			//TODO
-			return nil
 		}
 	}
-	//return fmt.Errorf("-----start--------%+v------end-----\n", rl)
-	return fmt.Errorf("no valid annotation cfw/deployment found")
+	return nil
 }
 
-const sriovPrefix string = "sriov-device-"
-const hostdevPrefix string = "host-device-"
-const tmpGitLocalPath string = "/tmp/git/"
+const (
+	sriovPrefix     string = "sriov-device-"
+	hostdevPrefix   string = "host-device-"
+	tmpGitLocalPath string = "/tmp/git/"
+	sriovType       string = "sriov"
+	hostdevType     string = "hostdev"
+)
 
-type CfwNetInfo struct {
-	hostDevProtectedIfName          string //ifname like eth21
-	hostDevUnprotectedIfName        string //ifname like eth11
-	sriovProtectedNetProviderName   string //datanet name like datanet_1
-	sriovUnprotectedNetProviderName string //datanet name like datanet_1
+type deploymentSelector struct {
+	MatchLabels []MatchLabel `json:"matchLabels,omitempty" yaml:"matchLabels,omitempty"`
+	NadIfnames  []NadIfname  `json:"NadIfnames,omitempty" yaml:"NadIfnames,omitempty"`
+}
+type MatchLabel struct {
+	Key string `json:"key,omitempty" yaml:"key,omitempty"`
+	Val string `json:"val,omitempty" yaml:"val,omitempty"`
+}
+
+type NadIfname struct {
+	Networkname string `json:"networkname,omitempty" yaml:"networkname,omitempty"`
+	Phydev      string `json:"phydev,omitempty" yaml:"phydev,omitempty"`
+	Vdev        string `json:"vdev,omitempty" yaml:"vdev,omitempty"`
+	Type        string `json:"type,omitempty" yaml:"type,omitempty"`
 }
 
 type CfwConfig struct {
 	yaml.ResourceIdentifier `json:",inline" yaml:",inline"`
-	ConfigMaps              []configList `json:"configMaps,omitempty" yaml:"configMaps,omitempty"`
+	ConfigMaps              []configList       `json:"configMaps,omitempty" yaml:"configMaps,omitempty"`
+	DeploymentSelector      deploymentSelector `json:"deploymentSelector,omitempty" yaml:"deploymentSelector,omitempty"`
 }
 
 type configList struct {

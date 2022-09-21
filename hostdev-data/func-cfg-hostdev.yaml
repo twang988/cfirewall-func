@@ -23,6 +23,23 @@ configMaps:
         ref: poc/v1
         commit: 703dc70f77821f6b23f87ae37cd178867d5309a1
         proxy: http://147.11.252.42:9090
+  - pkgtype: dummy
+
+deploymentSelector: 
+  matchLabels:
+    - key: app
+      val: firewall-host-netdevice
+    - key: release
+      val: firewall-host-netdevice
+  NadIfnames: 
+    - networkname: unprotectednet
+      phydev: veth12
+      vdev: veth12
+      type: hostdev
+    - networkname: protectednet
+      phydev: veth21
+      vdev: veth21
+      type: hostdev
 
 
 
