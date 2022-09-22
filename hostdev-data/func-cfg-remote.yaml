@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: CfwConfig
+metadata: # kpt-merge: /kptfile.kpt.dev
+  name: cfwconfig-example
+  annotations:
+    config.kubernetes.io/local-config: "true"
+configMaps:
+  - pkgtype: coreFirewall
+    upstreamlock:
+      origintype: git
+      gitlock:
+        repo: https://github.com/twang988/cfirewall-func.git
+        directory: /hostdev-data/core/
+        ref: main
+        proxy: http://147.11.252.42:9090
+
+deploymentSelector: 
+  matchLabels:
+    - key: app
+      val: firewall-host-netdevice
+    - key: release
+      val: firewall-host-netdevice
+  NadIfnames: 
+    - networkname: unprotectednet
+      phydev: veth12
+      vdev: veth12
+      type: hostdev
+    - networkname: protectednet
+      phydev: veth21
+      vdev: veth21
+      type: hostdev
+
+
+
